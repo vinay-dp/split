@@ -2,12 +2,53 @@ import 'package:flutter/material.dart';
 import 'OverlappingAvatars.dart';
 import 'add_expense_page.dart';
 
-
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  List<Map<String, dynamic>> _expenses = [];
+
+  Map<String, double> _balances = {};
+
+  void _addExpense(Map<String, dynamic> expense) {
+    setState(() {
+      _expenses.insert(0, {
+        'desc': expense['desc'],
+        'date': expense['date'],
+        'amount': expense['amount'],
+        'paidBy': expense['paidBy'],
+        'users': expense['users'],
+      });
+
+      // Update balances for only users present in expenses
+      final splitAmount = expense['splitAmount'] ?? 0.0;
+      for (var user in expense['users']) {
+        if (user == expense['paidBy']) {
+          _balances[user] = (_balances[user] ?? 0) + (expense['amount'] - splitAmount);
+        } else {
+          _balances[user] = (_balances[user] ?? 0) - splitAmount;
+        }
+      }
+    });
+  }
+
+  List<String> get _allExpenseUsers {
+    final users = <String>{};
+    for (final exp in _expenses) {
+      for (final u in exp['users']) {
+        users.add(u);
+      }
+    }
+    return users.toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final users = _allExpenseUsers;
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -22,7 +63,6 @@ class HomePage extends StatelessWidget {
           ),
         ],
       ),
-
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Color(0xff5B68FF),
@@ -39,7 +79,6 @@ class HomePage extends StatelessWidget {
           ),
         ],
       ),
-
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Column(
@@ -48,21 +87,25 @@ class HomePage extends StatelessWidget {
             SizedBox(height: 15),
             Container(
               height: 174,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                physics: BouncingScrollPhysics(),
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: _carddetails('You', '\$ 45.50', 'Y', Colors.red),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: _carddetails('Sarah', '\$ 25.50', 'A', Colors.green),
-                  ),
-                  _carddetails('Bablu Sam', '\$ 5.50', 'B', Colors.green),
-                ],
-              ),
+              child: users.isEmpty
+                  ? Center(child: Text('No users yet'))
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      physics: BouncingScrollPhysics(),
+                      itemCount: users.length,
+                      itemBuilder: (context, idx) {
+                        final user = users[idx];
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: _carddetails(
+                            user,
+                            '\$ ${_balances[user]?.toStringAsFixed(2) ?? '0.00'}',
+                            user.isNotEmpty ? user[0].toUpperCase() : '',
+                            (_balances[user] ?? 0) < 0 ? Colors.red : Colors.green,
+                          ),
+                        );
+                      },
+                    ),
             ),
             SizedBox(height: 30),
             Text(
@@ -71,43 +114,41 @@ class HomePage extends StatelessWidget {
             ),
             SizedBox(height: 20),
             Expanded(
-              child: ListView(
-                scrollDirection: Axis.vertical,
-                children: [
-                  _recentdetails(
-                    'Dinner at Italian Restaurant',
-                    'Today',
-                    '\$156.00',
-                    'Sarah',
-                  ),
-                  SizedBox(height: 12),
-                  _recentdetails(
-                    'Grocery Shopping',
-                    'Yesterday',
-                    '\$89.50',
-                    'You',
-                  ),
-                  SizedBox(height: 12),
-                  _recentdetails(
-                    'Movie Tickets',
-                    '2 days ago',
-                    '\$45.00',
-                    'Mike',
-                  ),
-                ],
-              ),
+              child: _expenses.isEmpty
+                  ? Center(child: Text('No expenses yet'))
+                  : ListView.builder(
+                      itemCount: _expenses.length,
+                      itemBuilder: (context, idx) {
+                        final exp = _expenses[idx];
+                        final date = exp['date'] as DateTime;
+                        // Use the selected date passed from AddExpensePage
+                        final dateStr = '${date.toLocal()}'.split(' ')[0];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _recentdetails(
+                            exp['desc'],
+                            dateStr, // Selected date displayed here
+                            '\$${exp['amount'].toStringAsFixed(2)}',
+                            exp['paidBy'],
+                          ),
+                        );
+                      },
+                    ),
             ),
             SizedBox(height: 20),
             Row(
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).push(
+                    onPressed: () async {
+                      final result = await Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) => AddExpensePage(),
                         ),
                       );
+                      if (result != null && result is Map<String, dynamic>) {
+                        _addExpense(result);
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Color(0xff5B68FF),
