@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class AddExpensePage extends StatefulWidget {
-  const AddExpensePage({super.key});
+  final List<String> availableUsers;
+  const AddExpensePage({super.key, this.availableUsers = const []});
 
   @override
   State<AddExpensePage> createState() => _AddExpensePageState();
@@ -11,15 +12,27 @@ class AddExpensePage extends StatefulWidget {
 class _AddExpensePageState extends State<AddExpensePage> {
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
-
-  // Add a selected date variable, with default now
   DateTime _selectedDate = DateTime.now();
+  List<Map<String, dynamic>> _users = [];
+  String? _selectedPayer;
 
-  // Example: hardcoded users for splitting
-  final List<Map<String, dynamic>> _users = [
-    {'name': 'You', 'selected': true},
-    {'name': 'Sarah Wilson', 'selected': true},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _users = widget.availableUsers.map((userName) => {
+      'name': userName,
+      'selected': true, 
+      'avatar': 'images/avatar.jpg' 
+    }).toList();
+
+    if (widget.availableUsers.isNotEmpty) {
+      if (widget.availableUsers.contains('You')) {
+        _selectedPayer = 'You';
+      } else {
+        _selectedPayer = widget.availableUsers.first;
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +52,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
               controller: _amountController,
               keyboardType: TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
-                // Only allow numbers and up to one decimal point
                 FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
               ],
               style: TextStyle(
@@ -69,13 +81,12 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   horizontal: 16,
                   vertical: 16,
                 ),
-                hintText: 'What\'s this expense for?',
+                hintText: 'What\\\'s this expense for?',
                 hintStyle: TextStyle(fontSize: 16, color: Color(0xff9CA3AF)),
                 border: InputBorder.none,
               ),
             ),
             Divider(height: 1, color: Color(0xffF3F4F6)),
-            // Replace the fixed "Today" row with a GestureDetector to open date picker
             Padding(
               padding: const EdgeInsets.all(16),
               child: GestureDetector(
@@ -114,23 +125,54 @@ class _AddExpensePageState extends State<AddExpensePage> {
             ),
             Divider(height: 1, color: Color(0xffF3F4F6)),
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Paid by'),
-                  SizedBox(height: 10),
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        backgroundImage: AssetImage('images/avatar.jpg'),
-                        minRadius: 18,
-                      ),
-                      SizedBox(width: 10),
-                      Text('You'),
-                      Icon(Icons.keyboard_arrow_down_rounded),
-                    ],
+                  Text(
+                    'Paid by',
+                    style: TextStyle(fontSize: 16, color: Color(0xff4B5563)),
                   ),
+                  SizedBox(height: 10),
+                  if (widget.availableUsers.isNotEmpty)
+                    DropdownButtonFormField<String>(
+                      value: _selectedPayer,
+                      decoration: InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12), // Adjusted padding
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8.0),
+                          borderSide: BorderSide(color: Color(0xffD1D5DB)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8.0),
+                          borderSide: BorderSide(color: Color(0xffD1D5DB)),
+                        ),
+                        filled: true, // Optional: for background color
+                        fillColor: Colors.white, // Optional: background color
+                      ),
+                      hint: Text('Select Payer'),
+                      isExpanded: true,
+                      items: widget.availableUsers.map((String user) {
+                        return DropdownMenuItem<String>(
+                          value: user,
+                          child: Text(user),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedPayer = newValue;
+                        });
+                      },
+                      validator: (value) => value == null ? 'Please select a payer' : null,
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12.0),
+                      child: Text(
+                        'No users available. Add users on the home screen.',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -154,7 +196,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                         Row(
                           children: [
                             CircleAvatar(
-                              backgroundImage: AssetImage('images/avatar.jpg'),
+                              backgroundImage: AssetImage(user['avatar']), 
                               minRadius: 18,
                             ),
                             SizedBox(width: 10),
@@ -178,25 +220,48 @@ class _AddExpensePageState extends State<AddExpensePage> {
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () {
-                            final double? amount = double.tryParse(
+                            // First, try to parse the amount.
+                            final double? parsedAmount = double.tryParse(
                                 _amountController.text.replaceAll('\$', '').trim());
                             final String desc = _descController.text.trim();
-                            final selectedUsers = _users.where((u) => u['selected']).toList();
-                            if (amount != null && amount > 0 && desc.isNotEmpty && selectedUsers.isNotEmpty) {
-                              double splitAmount = selectedUsers.length == 1 ? 0.0 : amount / selectedUsers.length;
+                            final selectedUsers = _users.where((u) => u['selected'] as bool).toList();
+                            
+                            String errorMessage = '';
+                            if (parsedAmount == null || parsedAmount <= 0) {
+                              errorMessage = 'Please enter a valid amount.';
+                            } else if (desc.isEmpty) {
+                              errorMessage = 'Please enter a description.';
+                            } else if (_selectedPayer == null) {
+                              errorMessage = 'Please select who paid.';
+                            } else if (selectedUsers.isEmpty) {
+                              errorMessage = 'Please select users to split with.';
+                            }
+
+                            if (errorMessage.isNotEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(errorMessage)),
+                              );
+                            } else {
+                              // If errorMessage is empty, parsedAmount is guaranteed to be non-null and > 0.
+                              // We can now safely use the null assertion operator ! or assign to a non-nullable type.
+                              final double amount = parsedAmount!; // Assert non-null
+
+                              double splitAmount;
+                              if (selectedUsers.length == 1 && selectedUsers[0]['name'] == _selectedPayer) {
+                                splitAmount = amount; // Payer is the only one selected
+                              } else {
+                                // selectedUsers.length is guaranteed to be > 0 here due to the check above
+                                splitAmount = amount / selectedUsers.length;
+                              }
+
                               Navigator.of(context).pop({
-                                'amount': amount,
+                                'amount': amount, // Use the non-nullable amount
                                 'desc': desc,
                                 'splitAmount': splitAmount,
-                                'users': selectedUsers.map((u) => u['name']).toList(),
-                                'paidBy': 'You',
-                                // Pass the selected date instead of DateTime.now()
+                                'users': selectedUsers.map((u) => u['name'] as String).toList(),
+                                'paidBy': _selectedPayer!, // _selectedPayer is checked above
                                 'date': _selectedDate,
                               });
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Please enter valid details')),
-                              );
                             }
                           },
                           style: ElevatedButton.styleFrom(
@@ -216,6 +281,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 ],
               ),
             ),
+            SizedBox(height: 20), // Added some padding at the bottom
           ],
         ),
       ),

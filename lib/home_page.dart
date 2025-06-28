@@ -11,8 +11,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> _expenses = [];
-
   Map<String, double> _balances = {};
+  List<String> _addedUsers = ['You', 'Sarah Wilson']; // Initial users
 
   void _addExpense(Map<String, dynamic> expense) {
     setState(() {
@@ -24,7 +24,6 @@ class _HomePageState extends State<HomePage> {
         'users': expense['users'],
       });
 
-      // Update balances for only users present in expenses
       final splitAmount = expense['splitAmount'] ?? 0.0;
       for (var user in expense['users']) {
         if (user == expense['paidBy']) {
@@ -43,7 +42,53 @@ class _HomePageState extends State<HomePage> {
         users.add(u);
       }
     }
+    users.addAll(_addedUsers); // Add users from the modal
     return users.toList();
+  }
+
+  void _showAddUserModal() {
+    final TextEditingController userController = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text('Add New User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              SizedBox(height: 16),
+              TextField(
+                controller: userController,
+                decoration: InputDecoration(
+                  labelText: 'User Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SizedBox(height: 16),
+              ElevatedButton(
+                child: Text('Add User'),
+                onPressed: () {
+                  if (userController.text.isNotEmpty) {
+                    setState(() {
+                      _addedUsers.add(userController.text);
+                    });
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+              SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -69,9 +114,14 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Color(0xffffffff),
         elevation: 0,
         iconSize: 24,
+        onTap: (index) {
+          if (index == 1) { // Index 1 is 'Add User'
+            _showAddUserModal();
+          }
+        },
         items: [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.add), label: 'Add'),
+          BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline), label: 'Add User'),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
@@ -88,7 +138,7 @@ class _HomePageState extends State<HomePage> {
             Container(
               height: 174,
               child: users.isEmpty
-                  ? Center(child: Text('No users yet'))
+                  ? Center(child: Text('No users yet. Add users to see balances.'))
                   : ListView.builder(
                       scrollDirection: Axis.horizontal,
                       physics: BouncingScrollPhysics(),
@@ -121,15 +171,15 @@ class _HomePageState extends State<HomePage> {
                       itemBuilder: (context, idx) {
                         final exp = _expenses[idx];
                         final date = exp['date'] as DateTime;
-                        // Use the selected date passed from AddExpensePage
                         final dateStr = '${date.toLocal()}'.split(' ')[0];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: _recentdetails(
                             exp['desc'],
-                            dateStr, // Selected date displayed here
+                            dateStr,
                             '\$${exp['amount'].toStringAsFixed(2)}',
                             exp['paidBy'],
+                            exp['users'] as List<String>, // Pass users list
                           ),
                         );
                       },
@@ -143,7 +193,7 @@ class _HomePageState extends State<HomePage> {
                     onPressed: () async {
                       final result = await Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (context) => AddExpensePage(),
+                          builder: (context) => AddExpensePage(availableUsers: _allExpenseUsers), // Pass users here
                         ),
                       );
                       if (result != null && result is Map<String, dynamic>) {
@@ -208,7 +258,6 @@ Widget _carddetails(
               ),
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: Text(
@@ -216,14 +265,12 @@ Widget _carddetails(
               style: TextStyle(fontSize: 16, color: Color(0xff6E7787)),
             ),
           ),
-
           Text(
             amount,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: textcolor,
-              // letterSpacing: 0,
             ),
           ),
           Text(
@@ -236,7 +283,7 @@ Widget _carddetails(
   );
 }
 
-Widget _recentdetails(String title, String Date, String price, String user) {
+Widget _recentdetails(String title, String date, String price, String user, List<String> involvedUsers) {
   return Card(
     color: Colors.white,
     child: Container(
@@ -252,17 +299,19 @@ Widget _recentdetails(String title, String Date, String price, String user) {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
             children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xff1A1D1F),
+              Flexible( // Added Flexible to prevent overflow
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xff1A1D1F),
+                  ),
+                  overflow: TextOverflow.ellipsis, // Added overflow behavior
                 ),
               ),
-              Text(Date),
+              Text(date),
             ],
           ),
           Padding(
@@ -278,7 +327,8 @@ Widget _recentdetails(String title, String Date, String price, String user) {
               Expanded(
                 child: SizedBox(
                   height: 30,
-                  child: Stack(children: [OverlappingAvatars(count: 4)]),
+                  // Pass the list of users to OverlappingAvatars
+                  child: Stack(children: [OverlappingAvatars(users: involvedUsers)]), 
                 ),
               ),
               Text('Paid by $user'),
