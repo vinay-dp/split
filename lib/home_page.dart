@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:split_share/OverlappingAvatars.dart';
 import 'package:split_share/add_expense_page.dart';
 import 'package:split_share/user_avatar.dart';
+import 'firebase_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -22,7 +23,36 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _fetchExpenses();
     _recalculateBalances();
+  }
+
+  Future<void> _fetchExpenses() async {
+    try {
+      final expenses = await FirebaseService().getExpenses();
+      setState(() {
+        _expenses = expenses.map((expense) {
+          if (expense['date'] is String) {
+            expense['date'] = DateTime.parse(expense['date']);
+          }
+          if (expense['users'] is List<dynamic>) {
+            expense['users'] = List<String>.from(expense['users']);
+          }
+          // Ensure 'description' is fetched correctly
+          // Use 'description' if available, else fallback to 'desc' or 'No description'
+          if ((expense['description'] == null || expense['description'].toString().isEmpty) && expense['desc'] != null) {
+            expense['description'] = expense['desc'];
+            expense['description'] = 'No description';
+          }
+
+          return expense;
+        }).toList();
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load expenses: $e')),
+      );
+    }
   }
 
   List<String> get _allExpenseUsers {
@@ -44,6 +74,10 @@ class _HomePageState extends State<HomePage> {
 
   void _addExpense(Map<String, dynamic> expenseData) {
     setState(() {
+      // Ensure the 'date' field is parsed as DateTime
+      if (expenseData['date'] is String) {
+        expenseData['date'] = DateTime.parse(expenseData['date']);
+      }
       _expenses.add(expenseData);
       _recalculateBalances();
     });
@@ -184,7 +218,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             SizedBox(height: 15),
             Container(
-              height: MediaQuery.of(context).size.height * 0.22,
+              height: 170,
               child: usersForCards.isEmpty
                   ? Center(child: Text('No users yet. Add users to see balances.'))
                   : ListView.builder(
@@ -298,7 +332,7 @@ class _HomePageState extends State<HomePage> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: _recentdetails(
-                            exp['desc'],
+                            exp['description'] ?? exp['desc'] ?? 'No description',
                             dateStr,
                             '\$${(exp['amount'] as double).toStringAsFixed(2)}',
                             exp['paidBy'],
@@ -400,7 +434,14 @@ Widget _carddetails(
   );
 }
 
-Widget _recentdetails(String title, String date, String price, String user, List<String> involvedUsers, [List<Map<String, dynamic>>? addedUsers]) {
+Widget _recentdetails(String? title, String? date, String? price, String? user, List<String>? involvedUsers, [List<Map<String, dynamic>>? addedUsers]) {
+  // Provide default values for null fields
+  title ??= 'No description';
+  date ??= 'Unknown date';
+  price ??= '';     // Default price if null
+  user ??= 'Unknown';
+  involvedUsers ??= [];
+
   // Map involvedUsers (List<String>) to List<Map<String, dynamic>> with name and color
   List<Map<String, dynamic>> avatarUsers = involvedUsers.map((userName) {
     final match = (addedUsers ?? []).firstWhere(
@@ -409,11 +450,11 @@ Widget _recentdetails(String title, String date, String price, String user, List
     );
     return {'name': userName, 'color': match['color']};
   }).toList();
+
   return Card(
     color: Colors.white,
     child: Container(
       padding: EdgeInsets.all(16),
-      //height: 135,
       width: double.maxFinite,
       decoration: BoxDecoration(
         border: Border.all(color: Color(0xffF3F4F6)),
@@ -426,17 +467,15 @@ Widget _recentdetails(String title, String date, String price, String user, List
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Flexible( // Added Flexible to prevent overflow
+              Flexible(
                 child: Text(
                   title,
                   softWrap: true,
                   style: TextStyle(
                     fontSize: 16,
-
                     fontWeight: FontWeight.w600,
                     color: Color(0xff1A1D1F),
                   ),
-               //   overflow: TextOverflow.ellipsis, // Added overflow behavior
                 ),
               ),
               Text(date),

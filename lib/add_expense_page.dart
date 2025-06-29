@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'firebase_service.dart';
 
 class AddExpensePage extends StatefulWidget {
   final List<String> availableUsers;
@@ -232,7 +233,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
           width: double.infinity,
           height: 50,
           child: ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final double? parsedAmount = double.tryParse(
                   _amountController.text.replaceAll('\$', '').trim());
               final String desc = _descController.text.trim();
@@ -261,14 +262,25 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 } else {
                   splitAmount = amount / selectedUsers.length;
                 }
-                Navigator.of(context).pop({
-                  'amount': amount,
-                  'desc': desc,
-                  'splitAmount': splitAmount,
+
+                // Save expense to Firestore
+                final expenseData = {
+                  'amount': amount.toDouble(), // Ensure amount is double
+                  'description': desc.toString(),
+                  'splitAmount': splitAmount.toDouble(), // Ensure splitAmount is double
                   'users': selectedUsers.map((u) => u['name'] as String).toList(),
                   'paidBy': _selectedPayer!,
-                  'date': _selectedDate,
-                });
+                  'date': _selectedDate.toIso8601String(),
+                };
+
+                try {
+                  await FirebaseService().addExpense(expenseData: expenseData);
+                  Navigator.of(context).pop(expenseData);
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to save expense: $e')),
+                  );
+                }
               }
             },
             style: ElevatedButton.styleFrom(
