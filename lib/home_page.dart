@@ -1,6 +1,8 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'OverlappingAvatars.dart';
-import 'add_expense_page.dart';
+import 'package:split_share/OverlappingAvatars.dart';
+import 'package:split_share/add_expense_page.dart';
+import 'package:split_share/user_avatar.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -10,44 +12,68 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  List<Map<String, dynamic>> _expenses = [];
+  final TextEditingController _userNameController = TextEditingController();
+  List<Map<String, dynamic>> _addedUsers = [
+    {'name': 'You', 'color': Color(0xff5B68FF)},
+  ]; // Now stores name and color
   Map<String, double> _balances = {};
-  List<String> _addedUsers = ['You', 'Sarah Wilson']; // Initial users
+  List<Map<String, dynamic>> _expenses = [];
 
-  void _addExpense(Map<String, dynamic> expense) {
-    setState(() {
-      _expenses.insert(0, {
-        'desc': expense['desc'],
-        'date': expense['date'],
-        'amount': expense['amount'],
-        'paidBy': expense['paidBy'],
-        'users': expense['users'],
-      });
-
-      final splitAmount = expense['splitAmount'] ?? 0.0;
-      for (var user in expense['users']) {
-        if (user == expense['paidBy']) {
-          _balances[user] = (_balances[user] ?? 0) + (expense['amount'] - splitAmount);
-        } else {
-          _balances[user] = (_balances[user] ?? 0) - splitAmount;
-        }
-      }
-    });
+  @override
+  void initState() {
+    super.initState();
+    _recalculateBalances();
   }
 
   List<String> get _allExpenseUsers {
-    final users = <String>{};
-    for (final exp in _expenses) {
-      for (final u in exp['users']) {
-        users.add(u);
-      }
+    final allUsers = <String>{};
+    allUsers.addAll(_addedUsers.map((u) => u['name'] as String)); // Add users from the modal
+    for (var exp in _expenses) {
+      allUsers.add(exp['paidBy'] as String);
+      allUsers.addAll(exp['users'] as List<String>);
     }
-    users.addAll(_addedUsers); // Add users from the modal
-    return users.toList();
+    var sortedUsers = allUsers.toList();
+    // Ensure "You" is first if present
+    if (sortedUsers.contains('You')) {
+      sortedUsers.remove('You');
+      sortedUsers.insert(0, 'You');
+    }
+    return sortedUsers;
   }
 
+
+  void _addExpense(Map<String, dynamic> expenseData) {
+    setState(() {
+      _expenses.add(expenseData);
+      _recalculateBalances();
+    });
+  }
+
+  void _recalculateBalances() {
+    final newBalances = <String, double>{};
+    for (var user in _allExpenseUsers) {
+      newBalances[user] = 0.0;
+    }
+
+    for (var expense in _expenses) {
+      final paidBy = expense['paidBy'] as String;
+      final amount = expense['amount'] as double;
+      final involvedUsers = expense['users'] as List<String>;
+      final splitAmount = expense['splitAmount'] as double;
+
+      // The payer's balance increases by the total amount they paid.
+      newBalances[paidBy] = (newBalances[paidBy] ?? 0.0) + amount;
+
+      // Each involved user's share is subtracted from their balance.
+      for (var user in involvedUsers) {
+        newBalances[user] = (newBalances[user] ?? 0.0) - splitAmount;
+      }
+    }
+    _balances = newBalances;
+  }
+
+
   void _showAddUserModal() {
-    final TextEditingController userController = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -59,47 +85,69 @@ class _HomePageState extends State<HomePage> {
             right: 16,
             top: 16,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text('Add New User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              SizedBox(height: 16),
-              TextField(
-                controller: userController,
-                decoration: InputDecoration(
-                  labelText: 'User Name',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              SizedBox(height: 16),
-              ElevatedButton(
-                child: Text('Add User'),
-                onPressed: () {
-                  if (userController.text.isNotEmpty) {
-                    setState(() {
-                      _addedUsers.add(userController.text);
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              // Move errorText outside the builder to persist its value
+              return _AddUserModalContent(
+                userNameController: _userNameController,
+                addedUsers: _addedUsers,
+                onAddUser: (String newUserName) {
+                  setState(() {
+                    _addedUsers.add({
+                      'name': newUserName,
+                      'color': _getRandomColor(),
                     });
-                    Navigator.pop(context);
-                  }
+                    if (!_balances.containsKey(newUserName)) {
+                      _balances[newUserName] = 0.0;
+                    }
+                    _recalculateBalances();
+                  });
                 },
-              ),
-              SizedBox(height: 16),
-            ],
+
+              );
+            },
           ),
         );
       },
     );
   }
 
+  Color _getRandomColor() {
+    final random = Random();
+    return Color.fromARGB(
+      255,
+      100 + random.nextInt(156),
+      100 + random.nextInt(156),
+      100 + random.nextInt(156),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
-    final users = _allExpenseUsers;
+     List<String> usersForCards = _allExpenseUsers;
+     if (usersForCards.isEmpty) {
+        // If there are no expenses and no manually added users other than default,
+        // ensure at least "You" is shown, or prime with initial added users.
+        usersForCards = _addedUsers.isNotEmpty ? List.from(_addedUsers) : ['You'];
+         // Ensure all users in usersForCards have an entry in _balances
+        for (var user in usersForCards) {
+            if (!_balances.containsKey(user)) {
+                _balances[user] = 0.0;
+            }
+        }
+    }
+
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
         title: Text(
-          'Split & Share',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          'SplitShare',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         actions: [
           Padding(
@@ -136,22 +184,97 @@ class _HomePageState extends State<HomePage> {
           children: [
             SizedBox(height: 15),
             Container(
-              height: 174,
-              child: users.isEmpty
+              height: MediaQuery.of(context).size.height * 0.22,
+              child: usersForCards.isEmpty
                   ? Center(child: Text('No users yet. Add users to see balances.'))
                   : ListView.builder(
                       scrollDirection: Axis.horizontal,
                       physics: BouncingScrollPhysics(),
-                      itemCount: users.length,
+                      itemCount: usersForCards.length,
                       itemBuilder: (context, idx) {
-                        final user = users[idx];
+                        final userOnCard = usersForCards[idx];
+                        final balance = _balances[userOnCard] ?? 0.0;
+                        String debtStatusText = "";
+
+                        if (balance < 0) { // userOnCard needs to pay
+                          final creditors = _balances.entries
+                              .where((entry) => entry.key != userOnCard && entry.value > 0)
+                              .map((entry) => entry.key)
+                              .toList();
+                          if (userOnCard == 'You') {
+                            if (creditors.length == 1) {
+                              debtStatusText = "You pay ${creditors.first}";
+                            } else if (creditors.length > 1) {
+                              debtStatusText = "You pay multiple people";
+                            } else {
+                              debtStatusText = "You need to pay"; // Fallback
+                            }
+                          } else { // Card for another user who needs to pay
+                            if (creditors.contains('You')) {
+                                if (creditors.length == 1) {
+                                    debtStatusText = "$userOnCard pays You";
+                                } else {
+                                    debtStatusText = "$userOnCard pays You & others";
+                                }
+                            } else if (creditors.isNotEmpty) {
+                                if (creditors.length == 1) {
+                                    debtStatusText = "$userOnCard pays ${creditors.first}";
+                                } else {
+                                    debtStatusText = "$userOnCard pays others";
+                                }
+                            } else {
+                              debtStatusText = "$userOnCard needs to pay"; // Fallback
+                            }
+                          }
+                        } else if (balance > 0) { // userOnCard is to be paid
+                          final debtors = _balances.entries
+                              .where((entry) => entry.key != userOnCard && entry.value < 0)
+                              .map((entry) => entry.key)
+                              .toList();
+                          if (userOnCard == 'You') {
+                            if (debtors.length == 1) {
+                              debtStatusText = "${debtors.first} pays You";
+                            } else if (debtors.length > 1) {
+                              debtStatusText = "Multiple people pay You";
+                            } else {
+                              debtStatusText = "You are to be paid"; // Fallback
+                            }
+                          } else { // Card for another user who is to be paid
+                             if (debtors.contains('You')) {
+                                if (debtors.length == 1) { // Only "You" owes this user
+                                    debtStatusText = "You pay $userOnCard";
+                                } else { // "You" and others owe this user
+                                    debtStatusText = "You & others pay $userOnCard";
+                                }
+                            } else if (debtors.isNotEmpty) {
+                                if (debtors.length == 1) {
+                                    debtStatusText = "${debtors.first} pays $userOnCard";
+                                } else {
+                                    debtStatusText = "Others pay $userOnCard";
+                                }
+                            } else {
+                              debtStatusText = "$userOnCard is to be paid"; // Fallback
+                            }
+                          }
+                        } else { // balance is 0
+                          debtStatusText = "Settled up";
+                        }
+                         if (debtStatusText.isEmpty) { // Final safety net
+                            if (balance < 0) debtStatusText = (userOnCard == 'You' ? "You need to pay" : "$userOnCard needs to pay");
+                            else if (balance > 0) debtStatusText = (userOnCard == 'You' ? "You are to be paid" : "$userOnCard is to be paid");
+                            else debtStatusText = "Settled up";
+                        }
+
                         return Padding(
                           padding: const EdgeInsets.only(right: 12),
                           child: _carddetails(
-                            user,
-                            '\$ ${_balances[user]?.toStringAsFixed(2) ?? '0.00'}',
-                            user.isNotEmpty ? user[0].toUpperCase() : '',
-                            (_balances[user] ?? 0) < 0 ? Colors.red : Colors.green,
+                            userOnCard,
+                            // Use absolute value for display, color indicates direction
+                            '\$ ${balance.abs().toStringAsFixed(2)}',
+                            userOnCard.isNotEmpty ? userOnCard[0].toUpperCase() : '',
+                            balance < 0 ? Colors.red : Colors.green,
+                            debtStatusText,
+                            _addedUsers, // Pass the addedUsers list for color lookup
                           ),
                         );
                       },
@@ -177,9 +300,10 @@ class _HomePageState extends State<HomePage> {
                           child: _recentdetails(
                             exp['desc'],
                             dateStr,
-                            '\$${exp['amount'].toStringAsFixed(2)}',
+                            '\$${(exp['amount'] as double).toStringAsFixed(2)}',
                             exp['paidBy'],
-                            exp['users'] as List<String>, // Pass users list
+                            exp['users'] as List<String>,
+                            _addedUsers, // Pass the addedUsers list for color lookup
                           ),
                         );
                       },
@@ -227,12 +351,17 @@ Widget _carddetails(
     String amount,
     String avatar,
     Color textcolor,
+    String debtStatusText,
+    [List<Map<String, dynamic>>? addedUsers] // Add addedUsers as optional param
     ) {
+  // Lookup color from addedUsers, fallback to default if not found
+  final userColor = (addedUsers ?? []).firstWhere(
+    (u) => u['name'] == name,
+    orElse: () => {'color': const Color(0xff5B68FF)},
+  )['color'] as Color;
   return Card(
     color: Colors.white,
     child: Container(
-      height: 160,
-      width: 160,
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
@@ -241,28 +370,14 @@ Widget _carddetails(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            height: 40,
-            width: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Color(0xff5B68FF),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              avatar,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
+          // Use UserAvatar with color
+          UserAvatar(userName: name, backgroundColor: userColor),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: Text(
               name,
-              style: TextStyle(fontSize: 16, color: Color(0xff6E7787)),
+              style: TextStyle(fontSize: 18, color: Color(0xff6E7787), fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           Text(
@@ -274,8 +389,10 @@ Widget _carddetails(
             ),
           ),
           Text(
-            'you owe',
+            debtStatusText,
             style: TextStyle(fontSize: 14, color: Color(0xff6E7787)),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
           ),
         ],
       ),
@@ -283,12 +400,20 @@ Widget _carddetails(
   );
 }
 
-Widget _recentdetails(String title, String date, String price, String user, List<String> involvedUsers) {
+Widget _recentdetails(String title, String date, String price, String user, List<String> involvedUsers, [List<Map<String, dynamic>>? addedUsers]) {
+  // Map involvedUsers (List<String>) to List<Map<String, dynamic>> with name and color
+  List<Map<String, dynamic>> avatarUsers = involvedUsers.map((userName) {
+    final match = (addedUsers ?? []).firstWhere(
+      (u) => u['name'] == userName,
+      orElse: () => {'name': userName, 'color': const Color(0xff5B68FF)},
+    );
+    return {'name': userName, 'color': match['color']};
+  }).toList();
   return Card(
     color: Colors.white,
     child: Container(
       padding: EdgeInsets.all(16),
-      height: 135,
+      //height: 135,
       width: double.maxFinite,
       decoration: BoxDecoration(
         border: Border.all(color: Color(0xffF3F4F6)),
@@ -298,17 +423,20 @@ Widget _recentdetails(String title, String date, String price, String user, List
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Flexible( // Added Flexible to prevent overflow
                 child: Text(
                   title,
+                  softWrap: true,
                   style: TextStyle(
                     fontSize: 16,
+
                     fontWeight: FontWeight.w600,
                     color: Color(0xff1A1D1F),
                   ),
-                  overflow: TextOverflow.ellipsis, // Added overflow behavior
+               //   overflow: TextOverflow.ellipsis, // Added overflow behavior
                 ),
               ),
               Text(date),
@@ -327,8 +455,7 @@ Widget _recentdetails(String title, String date, String price, String user, List
               Expanded(
                 child: SizedBox(
                   height: 30,
-                  // Pass the list of users to OverlappingAvatars
-                  child: Stack(children: [OverlappingAvatars(users: involvedUsers)]), 
+                  child: OverlappingAvatars(users: avatarUsers),
                 ),
               ),
               Text('Paid by $user'),
@@ -338,4 +465,82 @@ Widget _recentdetails(String title, String date, String price, String user, List
       ),
     ),
   );
+}
+
+class _AddUserModalContent extends StatefulWidget {
+  final TextEditingController userNameController;
+  final List<Map<String, dynamic>> addedUsers;
+  final ValueChanged<String> onAddUser;
+
+  const _AddUserModalContent({
+    required this.userNameController,
+    required this.addedUsers,
+    required this.onAddUser,
+  });
+
+  @override
+  __AddUserModalContentState createState() => __AddUserModalContentState();
+}
+
+class __AddUserModalContentState extends State<_AddUserModalContent> {
+  String? errorText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text('Add New User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        SizedBox(height: 15),
+        TextField(
+          controller: widget.userNameController,
+          decoration: InputDecoration(
+            hintText: 'Enter your username',
+            hintStyle: TextStyle(color: Color(0xff9F9F9F)),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Color(0xff9F9F9F)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            border: OutlineInputBorder(
+              borderSide: BorderSide(
+                width: 1,
+                style: BorderStyle.solid,
+                color: Color(0xff9F9F9F),
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            errorText: errorText,
+          ),
+          onChanged: (_) {
+            setState(() {});
+          },
+
+        ),
+
+        SizedBox(height: 20),
+        ElevatedButton(
+          child: Text('Add User'),
+          onPressed: () {
+            final newUserName = widget.userNameController.text.trim();
+            if (newUserName.isEmpty) {
+              setState(() {
+                errorText = 'Please enter a username';
+              });
+              return;
+            }
+            if (widget.addedUsers.any((u) => u['name'] == newUserName)) {
+              setState(() {
+                errorText = 'This username already exists';
+              });
+              return;
+            }
+            widget.onAddUser(newUserName);
+            widget.userNameController.clear(); // Clear the controller after adding
+            Navigator.pop(context);
+          },
+        ),
+        SizedBox(height: 20),
+      ],
+    );
+  }
 }

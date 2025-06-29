@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 class UserAvatar extends StatelessWidget {
   final String? userName; // Made userName nullable
+  final Color? backgroundColor; // Add backgroundColor parameter
 
-  const UserAvatar({super.key, this.userName}); // Added userName parameter
+  const UserAvatar({super.key, this.userName, this.backgroundColor}); // Update constructor
 
   @override
   Widget build(BuildContext context) {
@@ -16,7 +17,7 @@ class UserAvatar extends StatelessWidget {
       width: 30,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Color(0xff5B68FF), // Default color, can be made dynamic
+        color: backgroundColor ?? Color(0xff5B68FF), // Use provided color or default
         border: Border.all(width: 2, color: Colors.white),
       ),
       alignment: Alignment.center,
