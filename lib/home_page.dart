@@ -4,6 +4,7 @@ import 'package:split_share/OverlappingAvatars.dart';
 import 'package:split_share/add_expense_page.dart';
 import 'package:split_share/user_avatar.dart';
 import 'firebase_service.dart';
+import 'package:intl/intl.dart'; // <-- Add this import
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -38,15 +39,27 @@ class _HomePageState extends State<HomePage> {
           if (expense['users'] is List<dynamic>) {
             expense['users'] = List<String>.from(expense['users']);
           }
-          // Ensure 'description' is fetched correctly
-          // Use 'description' if available, else fallback to 'desc' or 'No description'
-          if ((expense['description'] == null || expense['description'].toString().isEmpty) && expense['desc'] != null) {
-            expense['description'] = expense['desc'];
-            expense['description'] = 'No description';
-          }
-
           return expense;
         }).toList();
+
+        // --- Ensure all users from expenses have a color in _addedUsers ---
+        final allExpenseUsers = <String>{};
+        for (var exp in _expenses) {
+          allExpenseUsers.add(exp['paidBy'] as String);
+          allExpenseUsers.addAll(exp['users'] as List<String>);
+        }
+        for (var user in allExpenseUsers) {
+          if (!_addedUsers.any((u) => u['name'] == user)) {
+            // Use the same color logic as UserAvatar for consistency
+            _addedUsers.add({
+              'name': user,
+              'color': _getColorFromName(user),
+            });
+          }
+        }
+        // ---------------------------------------------------------------
+
+        _recalculateBalances(); // <-- Ensure balances are recalculated after fetching
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -74,7 +87,6 @@ class _HomePageState extends State<HomePage> {
 
   void _addExpense(Map<String, dynamic> expenseData) {
     setState(() {
-      // Ensure the 'date' field is parsed as DateTime
       if (expenseData['date'] is String) {
         expenseData['date'] = DateTime.parse(expenseData['date']);
       }
@@ -95,11 +107,12 @@ class _HomePageState extends State<HomePage> {
       final involvedUsers = expense['users'] as List<String>;
       final splitAmount = expense['splitAmount'] as double;
 
-      // The payer's balance increases by the total amount they paid.
+      // Increase the payer's balance by the full paid amount.
       newBalances[paidBy] = (newBalances[paidBy] ?? 0.0) + amount;
 
-      // Each involved user's share is subtracted from their balance.
+      // Subtract each involved user's share unless the only involved user is the payer.
       for (var user in involvedUsers) {
+        if (involvedUsers.length == 1 && user == paidBy) continue;
         newBalances[user] = (newBalances[user] ?? 0.0) - splitAmount;
       }
     }
@@ -146,7 +159,20 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Color _getColorFromName(String? name) {
+    if (name == null || name.isEmpty) return Color(0xff5B68FF);
+    final hash = name.codeUnits.fold(0, (prev, elem) => prev + elem);
+    final rand = Random(hash);
+    return Color.fromARGB(
+      255,
+      100 + rand.nextInt(156),
+      100 + rand.nextInt(156),
+      100 + rand.nextInt(156),
+    );
+  }
+
   Color _getRandomColor() {
+    // fallback for manual add user
     final random = Random();
     return Color.fromARGB(
       255,
@@ -304,7 +330,7 @@ class _HomePageState extends State<HomePage> {
                           child: _carddetails(
                             userOnCard,
                             // Use absolute value for display, color indicates direction
-                            '\$ ${balance.abs().toStringAsFixed(2)}',
+                            '\₹ ${balance.abs().toStringAsFixed(2)}',
                             userOnCard.isNotEmpty ? userOnCard[0].toUpperCase() : '',
                             balance < 0 ? Colors.red : Colors.green,
                             debtStatusText,
@@ -328,13 +354,13 @@ class _HomePageState extends State<HomePage> {
                       itemBuilder: (context, idx) {
                         final exp = _expenses[idx];
                         final date = exp['date'] as DateTime;
-                        final dateStr = '${date.toLocal()}'.split(' ')[0];
+                        final dateStr = date.toIso8601String(); // <-- Pass ISO string
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: _recentdetails(
                             exp['description'] ?? exp['desc'] ?? 'No description',
                             dateStr,
-                            '\$${(exp['amount'] as double).toStringAsFixed(2)}',
+                            '\₹${(exp['amount'] as double).toStringAsFixed(2)}',
                             exp['paidBy'],
                             exp['users'] as List<String>,
                             _addedUsers, // Pass the addedUsers list for color lookup
@@ -442,6 +468,15 @@ Widget _recentdetails(String? title, String? date, String? price, String? user, 
   user ??= 'Unknown';
   involvedUsers ??= [];
 
+  // Format date as DDMMYY HH:MM:am/pm
+  String formattedDate = date;
+  try {
+    DateTime parsedDate = DateTime.parse(date);
+    formattedDate = DateFormat('dd/MM/yy hh:mm:a').format(parsedDate);
+  } catch (_) {
+    formattedDate = date;
+  }
+
   // Map involvedUsers (List<String>) to List<Map<String, dynamic>> with name and color
   List<Map<String, dynamic>> avatarUsers = involvedUsers.map((userName) {
     final match = (addedUsers ?? []).firstWhere(
@@ -478,7 +513,7 @@ Widget _recentdetails(String? title, String? date, String? price, String? user, 
                   ),
                 ),
               ),
-              Text(date),
+              Text(formattedDate, style: TextStyle(color: Colors.grey, fontSize: 12),),
             ],
           ),
           Padding(
@@ -497,7 +532,18 @@ Widget _recentdetails(String? title, String? date, String? price, String? user, 
                   child: OverlappingAvatars(users: avatarUsers),
                 ),
               ),
-              Text('Paid by $user'),
+              RichText(
+                text: TextSpan(
+                  text: 'Paid by ',
+                  style: TextStyle(color: Color(0xff6E7787), fontSize: 14),
+                  children: [
+                    TextSpan(
+                      text: user,
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xff1A1D1F)),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ],

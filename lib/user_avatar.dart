@@ -1,15 +1,26 @@
 import 'package:flutter/material.dart';
+import 'dart:math';
 
 class UserAvatar extends StatelessWidget {
-  final String? userName; // Made userName nullable
-  final Color? backgroundColor; // Add backgroundColor parameter
+  final String? userName;
+  final Color? backgroundColor;
 
-  const UserAvatar({super.key, this.userName, this.backgroundColor}); // Update constructor
+  const UserAvatar({super.key, this.userName, this.backgroundColor});
+
+  Color _getColorFromName(String? name) {
+    if (name == null || name.isEmpty) return Color(0xff5B68FF);
+    final hash = name.codeUnits.fold(0, (prev, elem) => prev + elem);
+    final rand = Random(hash);
+    return Color.fromARGB(
+      255,
+      100 + rand.nextInt(156),
+      100 + rand.nextInt(156),
+      100 + rand.nextInt(156),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Determine the initial to display
-    // Uses the first letter of userName if available and not empty, otherwise defaults to '?'
     String initial = (userName != null && userName!.isNotEmpty) ? userName![0].toUpperCase() : '?';
 
     return Container(
@@ -17,7 +28,7 @@ class UserAvatar extends StatelessWidget {
       width: 30,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: backgroundColor ?? Color(0xff5B68FF), // Use provided color or default
+        color: backgroundColor ?? _getColorFromName(userName),
         border: Border.all(width: 2, color: Colors.white),
       ),
       alignment: Alignment.center,
